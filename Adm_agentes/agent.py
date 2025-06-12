@@ -14,7 +14,7 @@ OpenAi_model = LiteLlm(
 )
 
 # Configuração dos caminhos
-BASE_PATH = r"D:\cod\Arsae\Adk\teste_mult_agent\Adminstrador_resolucoes\documentos"
+BASE_PATH = r"D:\cod\Arsae\Adk\Projeto_Adk_resolucoes\Adm_agentes\documentos"
 
 def read_pdf(filename: str) -> str:
     """Read PDF content and extract text."""
@@ -62,51 +62,61 @@ def read_all_pdfs() -> dict:
     
     return conteudos
 
-# Funções com nomes em português como wrapper (para manter compatibilidade)
-def Ler_PDF(nome_arquivo: str) -> str:
-    """Wrapper para read_pdf mantendo compatibilidade."""
-    return read_pdf(nome_arquivo)
-
-def Listar_PDFs() -> list:
-    """Wrapper para list_pdfs mantendo compatibilidade."""
-    return list_pdfs()
-
-def Ler_todos_PDFs() -> dict:
-    """Wrapper para read_all_pdfs mantendo compatibilidade."""
-    return read_all_pdfs()
-
 Contradicao = LlmAgent(
     model=OpenAi_model,
     name="Contradicao",
-    description="Agente responsável por verificar contradições em documentos PDF de resoluções.",
+    description="Agent responsible for analyzing contradictions in resolutions.",
     instruction=f"""
-    Você é um especialista em encontrar contradições em documentos.
+    You are a specialist in finding contradictions in documents.
     
+    Start by reading the available PDFs in the directory and writing their names with that format:
+
     DOCUMENTOS DISPONÍVEIS: {', '.join(list_pdfs())}
     
-    FUNÇÕES DISPONÍVEIS:
-    - read_pdf(filename) - Lê um PDF específico
-    - list_pdfs() - Lista todos os PDFs
-    - read_all_pdfs() - Lê todos os PDFs
-    
-    INSTRUÇÕES:
-    1. Analise os PDFs buscando contradições entre resoluções
-    2. Uma contradição é quando uma resolução diz algo e outra diz o oposto
-    3. Cite trechos específicos dos documentos
-    4. Não aponte erros de gramática, apenas contradições de conteúdo
-    
-    FORMATO DE RESPOSTA:
+  
+    Functions available for you to use:
+    - read_pdf(filename: str) -> str - Read PDF content from a file and extract text in a string format
+    - read_all_pdfs() -> dict - Read all PDFs and return a dictionary with their content
+    - list_pdfs() -> list - List all available PDF files in the directory
+
+    INSTRUCTIONS:
+
+    1- Analyze the PDFs looking for contradictions between resolutions, this contradictions can be in a one or more documents,
+       you need to check all resolutions between all documents 
+    2- A contradiction is when one resolution says something and another says the opposite
+    3- You must to ignore strikethrough phases
+    4- Cite the specific excerpts from the documents where the contradictions occur
+    5- Do not point out grammar errors, or say anything other than what was requested - only content contradictions
+    6- If you don't find contradictions, inform that there are no contradictions - this is a valid response
+    7- Use the available documents for your analysis
+    8- Be objective and clear in your responses
+    9- When activated, you must perform your analysis without waiting for additional instructions
+    10- after you finish your analysis, you must to pass to the Adm_agentes agent for validation
+
+    RESPONSE FORMAT:
     ----------------------------------------------------------------------------------------------------------------
     ANÁLISE DE CONTRADIÇÕES:
     
     - Documentos analisados: [lista]
     - Número de contradições: [número]
     
-    Para cada contradição encontrada:
+    for each contradiction found, use the following format:
     - Contradição [número]:
-        - Documento 1: [nome] - [trecho]
-        - Documento 2: [nome] - [trecho]
-        - Explicação: [detalhes da contradição]
+
+        -  [nome do documento]
+            Número do artigo: [número do artigo] (ex: Art. 1)
+
+            - [trecho]
+
+
+        -  [nome do documento]
+            Número do artigo: [número do artigo] (ex: Art. 1)
+
+            - [trecho]
+
+        - Explicação:
+        
+        [detalhes da contradição]
     ----------------------------------------------------------------------------------------------------------------
     """,
     tools=[read_pdf, list_pdfs, read_all_pdfs],
@@ -116,23 +126,25 @@ Contradicao = LlmAgent(
 Adm_agentes = LlmAgent(
     model=OpenAi_model,
     name="Adm_agentes",
-    description="Agente supervisor responsável por validar o trabalho dos outros agentes.",
+    description="Agent responsible for managing and validating the work of other agents.",
     instruction="""
-    Você é o supervisor responsável por validar o trabalho dos agentes.
-    
-    IMPORTANTE: Acesse a análise anterior através do estado 'analise_contradicoes'.
-    
-    INSTRUÇÕES:
-    1. Verifique se o trabalho do agente Contradição está correto
-    2. Valide se as contradições encontradas são reais
-    3. Aponte erros caso existam
-    
-    FORMATO DE RESPOSTA:
+    Your task is to ensure that the Contradicao agent has performed its work correctly and that the contradictions found are valid.
+
+    IMPORTANT: Access the previous analysis through the state 'analise_contradicoes'.
+
+    INSTRUCTIONS:
+    1. Check if the work of the Contradicao agent is correct
+    2. Validate if the contradictions found are real
+    3. Point out errors if they exist
+    4. after all agents have finished their work, you must validate the final result
+    5. When the chat starts, you must to pass to the conversation for the Contradicao agent to perform its analysis
+
+    RESPONSE FORMAT:
     ----------------------------------------------------------------------------------------------------------------
     VALIDAÇÃO DO TRABALHO:
     - Trabalho desenvolvido corretamente: [Sim/Não]
     
-    Se NÃO:
+    If not correct:
     - Agente: [nome]
     - Erro encontrado: [descrição]
     - Trecho incorreto: [citação]
