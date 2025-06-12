@@ -1,0 +1,5 @@
+para mudar a llm para alguma externa ao gemini
+
+trocar o model de cada agente para OpenAi_model
+trocar a biblioteca que gerencia os agentes para Llmlite
+tirar o comentario da OPENAI_API_KEY

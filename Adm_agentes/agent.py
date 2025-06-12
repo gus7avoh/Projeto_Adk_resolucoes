@@ -1,8 +1,10 @@
 # Imports corretos para Google ADK
 from google.adk.agents import LlmAgent
+from google.adk.agents import Agent
 from google.adk.models.lite_llm import LiteLlm
 import os
 import PyPDF2
+import fitz  # PyMuPDF
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -13,29 +15,67 @@ OpenAi_model = LiteLlm(
     api_key = os.getenv('OPENAI_API_KEY')
 )
 
+
+#model : "gemini-2.0-flash",	 
+#api_key : os.getenv('GEMINI_API_KEY')
+
+
 # Configuração dos caminhos
 BASE_PATH = r"D:\cod\Arsae\Adk\Projeto_Adk_resolucoes\Adm_agentes\documentos"
 
-def read_pdf(filename: str) -> str:
-    """Read PDF content and extract text."""
+def read_pdf_visual_detection(filename: str) -> str:
+    """Try to detect strikethrough by visual elements."""
     document_path = os.path.join(BASE_PATH, filename)
     
-    if not os.path.exists(document_path):
-        return f"Arquivo {filename} não encontrado."
-    
-    try:    
-        with open(document_path, 'rb') as file:
-            pdf_reader = PyPDF2.PdfReader(file)
-            texto_completo = ""
+    try:
+        doc = fitz.open(document_path)
+        texto_completo = ""
+        
+        for page_num in range(doc.page_count):
+            page = doc[page_num]
             
-            for pagina in pdf_reader.pages:
-                texto_completo += pagina.extract_text() + "\n"
+            # Busca por linhas horizontais (possíveis riscos)
+            drawings = page.get_drawings()
+            strike_lines = []
             
+            for drawing in drawings:
+                # Verifica se é uma linha horizontal
+                if drawing.get("type") == "l":  # linha
+                    rect = drawing.get("rect")
+                    if rect and abs(rect[3] - rect[1]) < 2:  # Linha muito fina (horizontal)
+                        strike_lines.append(fitz.Rect(rect))
+            
+            # Extrai texto e verifica sobreposição com linhas
+            text_dict = page.get_text("dict")
+            
+            for block in text_dict["blocks"]:
+                if "lines" in block:
+                    for line in block["lines"]:
+                        for span in line["spans"]:
+                            text = span["text"]
+                            span_rect = fitz.Rect(span["bbox"])
+                            
+                            # Verifica se há linha passando pelo meio do texto
+                            is_struck = False
+                            for strike_line in strike_lines:
+                                if (strike_line.y0 > span_rect.y0 and 
+                                    strike_line.y0 < span_rect.y1 and
+                                    strike_line.intersects(span_rect)):
+                                    is_struck = True
+                                    break
+                            
+                            if is_struck:
+                                texto_completo += f"<RISCADO>{text}</RISCADO>"
+                            else:
+                                texto_completo += text
+                        texto_completo += "\n"
+        
+        doc.close()
         return texto_completo.strip()
-    
+        
     except Exception as e:
         return f"Erro ao ler PDF {filename}: {str(e)}"
-
+    
 def list_pdfs() -> list:
     """List all available PDF files."""
     try:
@@ -62,8 +102,10 @@ def read_all_pdfs() -> dict:
     
     return conteudos
 
-Contradicao = LlmAgent(
-    model=OpenAi_model,
+
+#Contradicao = LlmAgent(
+Contradicao = Agent(
+    model = "gemini-2.0-flash",	 
     name="Contradicao",
     description="Agent responsible for analyzing contradictions in resolutions.",
     instruction=f"""
@@ -84,7 +126,7 @@ Contradicao = LlmAgent(
     1- Analyze the PDFs looking for contradictions between resolutions, this contradictions can be in a one or more documents,
        you need to check all resolutions between all documents 
     2- A contradiction is when one resolution says something and another says the opposite
-    3- You must to ignore strikethrough phases
+    3- You must to ignore strikethrough phases this will stay between <RISCADO> tags, you must to ignore this tags and the text inside them
     4- Cite the specific excerpts from the documents where the contradictions occur
     5- Do not point out grammar errors, or say anything other than what was requested - only content contradictions
     6- If you don't find contradictions, inform that there are no contradictions - this is a valid response
@@ -123,8 +165,9 @@ Contradicao = LlmAgent(
     output_key="analise_contradicoes"
 )
 
-Adm_agentes = LlmAgent(
-    model=OpenAi_model,
+#Adm_agentes = LlmAgent(
+Adm_agentes = Agent(
+    model = "gemini-2.0-flash",	 
     name="Adm_agentes",
     description="Agent responsible for managing and validating the work of other agents.",
     instruction="""
