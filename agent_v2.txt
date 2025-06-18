@@ -1,0 +1,432 @@
+# Imports corretos para Google ADK
+from google.adk.agents import LlmAgent
+from google.adk.agents import Agent
+from google.adk.models.lite_llm import LiteLlm
+import os
+import json
+from pathlib import Path
+from dotenv import load_dotenv
+from pdf2docx import Converter
+from docx import Document
+from typing import Dict, List, Optional, Tuple
+import logging
+
+# Configuração de logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+load_dotenv()
+
+# Configuração dos caminhos - usando variáveis de ambiente para flexibilidade
+BASE_PATH = os.getenv('DOCUMENTS_PATH', r"D:\cod\Arsae\Adk\Projeto_Adk_resolucoes\Adm_agentes\documentos")
+CACHE_FILE = os.path.join(BASE_PATH, "cache_processamento.json")
+
+# ========================================
+# FUNÇÕES UTILITÁRIAS MELHORADAS
+# ========================================
+
+def ensure_directories() -> bool:
+    """Garante que os diretórios necessários existam."""
+    try:
+        os.makedirs(BASE_PATH, exist_ok=True)
+        logger.info(f"Diretório garantido: {BASE_PATH}")
+        return True
+    except Exception as e:
+        logger.error(f"Erro ao criar diretórios: {str(e)}")
+        return False
+
+def list_pdfs() -> List[str]:
+    """Lista todos os arquivos PDF disponíveis."""
+    try:
+        if not os.path.exists(BASE_PATH):
+            logger.warning(f"Diretório {BASE_PATH} não existe.")
+            return []
+        
+        pdfs = [f for f in os.listdir(BASE_PATH) if f.lower().endswith('.pdf')]
+        logger.info(f"Encontrados {len(pdfs)} arquivos PDF")
+        return pdfs
+    
+    except Exception as e:
+        logger.error(f"Erro ao listar arquivos: {str(e)}")
+        return []
+
+def converter_pdf_para_docx(pdf_path: str, docx_path: str) -> bool:
+    """
+    Converte um arquivo PDF para DOCX.
+    """
+    try:
+        if not os.path.exists(pdf_path):
+            logger.error(f"Arquivo PDF não encontrado: {pdf_path}")
+            return False
+        
+        # Verificar se o arquivo DOCX já existe e é mais recente
+        if os.path.exists(docx_path):
+            pdf_time = os.path.getmtime(pdf_path)
+            docx_time = os.path.getmtime(docx_path)
+            if docx_time > pdf_time:
+                logger.info(f"DOCX já existe e é mais recente: {os.path.basename(docx_path)}")
+                return True
+            
+        cv = Converter(pdf_path)
+        cv.convert(docx_path)
+        cv.close()
+        logger.info(f"PDF convertido com sucesso: {os.path.basename(pdf_path)}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Erro ao converter PDF para DOCX ({os.path.basename(pdf_path)}): {str(e)}")
+        return False
+
+def analisar_estrutura_documento(docx_path: str) -> Dict:
+    """
+    Analisa a estrutura completa do documento DOCX.
+    Retorna tanto texto riscado quanto normal com metadados.
+    """
+    try:
+        if not os.path.exists(docx_path):
+            logger.error(f"Arquivo DOCX não encontrado: {docx_path}")
+            return {"erro": "Arquivo não encontrado"}
+        
+        doc = Document(docx_path)
+        resultado = {
+            "paragrafos": [],
+            "estatisticas": {
+                "total_paragrafos": 0,
+                "paragrafos_com_texto_riscado": 0,
+                "paragrafos_normais": 0,
+                "palavras_total": 0
+            },
+            "metadados": {
+                "arquivo": os.path.basename(docx_path),
+                "caminho": docx_path,
+                "tamanho_arquivo": os.path.getsize(docx_path)
+            }
+        }
+
+        for i, paragraph in enumerate(doc.paragraphs):
+            texto = paragraph.text.strip()
+            if not texto:
+                continue
+
+            # Analisar formatação
+            tem_risco = any(run.font.strike for run in paragraph.runs)
+            
+            paragrafo_info = {
+                "numero": i + 1,
+                "texto": texto,
+                "tem_texto_riscado": tem_risco,
+                "palavras": len(texto.split()),
+                "caracteres": len(texto)
+            }
+            
+            resultado["paragrafos"].append(paragrafo_info)
+            
+            # Atualizar estatísticas
+            resultado["estatisticas"]["total_paragrafos"] += 1
+            resultado["estatisticas"]["palavras_total"] += paragrafo_info["palavras"]
+            
+            if tem_risco:
+                resultado["estatisticas"]["paragrafos_com_texto_riscado"] += 1
+            else:
+                resultado["estatisticas"]["paragrafos_normais"] += 1
+
+        logger.info(f"Análise completa do documento: {os.path.basename(docx_path)} - "
+                   f"{resultado['estatisticas']['total_paragrafos']} parágrafos processados")
+        
+        return resultado
+
+    except Exception as e:
+        logger.error(f"Erro ao analisar documento DOCX: {str(e)}")
+        return {"erro": str(e)}
+
+def salvar_cache(dados: Dict) -> bool:
+    """Salva os dados processados em cache."""
+    try:
+        with open(CACHE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(dados, f, ensure_ascii=False, indent=2)
+        logger.info(f"Cache salvo em: {CACHE_FILE}")
+        return True
+    except Exception as e:
+        logger.error(f"Erro ao salvar cache: {str(e)}")
+        return False
+
+def carregar_cache() -> Optional[Dict]:
+    """Carrega dados do cache se existir."""
+    try:
+        if os.path.exists(CACHE_FILE):
+            with open(CACHE_FILE, 'r', encoding='utf-8') as f:
+                dados = json.load(f)
+            logger.info("Cache carregado com sucesso")
+            return dados
+    except Exception as e:
+        logger.error(f"Erro ao carregar cache: {str(e)}")
+    return None
+
+def processar_pdf_completo() -> Dict:
+    """
+    Processa todos os PDFs com análise completa e cache.
+    """
+    # Garantir que os diretórios existam
+    if not ensure_directories():
+        return {"erro": "Não foi possível criar/acessar os diretórios necessários"}
+    
+    # Tentar carregar do cache primeiro
+    cache_data = carregar_cache()
+    if cache_data and cache_data.get("sucesso"):
+        logger.info("Dados carregados do cache")
+        return cache_data
+    
+    resultados = {}
+    arquivos_pdf = list_pdfs()
+    
+    if not arquivos_pdf:
+        return {"erro": "Nenhum arquivo PDF encontrado", "arquivos_processados": 0}
+    
+    logger.info(f"Iniciando processamento de {len(arquivos_pdf)} arquivos PDF")
+    
+    for arquivo_pdf in arquivos_pdf:
+        logger.info(f"Processando: {arquivo_pdf}")
+        
+        # Construir caminhos completos
+        pdf_path = os.path.join(BASE_PATH, arquivo_pdf)
+        nome_base = os.path.splitext(arquivo_pdf)[0]
+        docx_path = os.path.join(BASE_PATH, f"{nome_base}.docx")
+        
+        # Converter PDF para DOCX
+        sucesso_conversao = converter_pdf_para_docx(pdf_path, docx_path)
+        
+        if sucesso_conversao:
+            # Analisar estrutura completa
+            resultado_analise = analisar_estrutura_documento(docx_path)
+            resultados[arquivo_pdf] = {
+                "convertido": True,
+                "caminho_docx": docx_path,
+                "analise_completa": resultado_analise,
+                "status": "sucesso"
+            }
+        else:
+            resultados[arquivo_pdf] = {
+                "convertido": False,
+                "erro": "Falha na conversão",
+                "analise_completa": None,
+                "status": "erro"
+            }
+    
+    # Preparar resultado final
+    resultado_final = {
+        "arquivos_processados": len(resultados),
+        "arquivos_com_sucesso": len([r for r in resultados.values() if r["status"] == "sucesso"]),
+        "resultados": resultados,
+        "sucesso": True,
+        "timestamp": os.path.getctime(CACHE_FILE) if os.path.exists(CACHE_FILE) else None
+    }
+    
+    # Salvar no cache
+    salvar_cache(resultado_final)
+    
+    logger.info(f"Processamento concluído. {len(resultados)} arquivos processados.")
+    return resultado_final
+
+def obter_dados_para_analise() -> Dict:
+    """
+    Obtém os dados processados formatados especificamente para análise de contradições.
+    """
+    dados_brutos = processar_pdf_completo()
+    
+    if not dados_brutos.get("sucesso"):
+        return dados_brutos
+    
+    # Formatar dados para análise
+    dados_formatados = {
+        "documentos": {},
+        "estatisticas_gerais": {
+            "total_documentos": dados_brutos["arquivos_processados"],
+            "documentos_processados": dados_brutos["arquivos_com_sucesso"],
+            "total_paragrafos": 0,
+            "total_palavras": 0
+        }
+    }
+    
+    for arquivo, resultado in dados_brutos["resultados"].items():
+        if resultado["status"] == "sucesso" and resultado["analise_completa"]:
+            analise = resultado["analise_completa"]
+            
+            # Extrair apenas texto normal (não riscado) para análise
+            textos_normais = [
+                p["texto"] for p in analise["paragrafos"] 
+                if not p["tem_texto_riscado"] and p["texto"].strip()
+            ]
+            
+            dados_formatados["documentos"][arquivo] = {
+                "nome": arquivo,
+                "textos": textos_normais,
+                "total_paragrafos": len(textos_normais),
+                "estatisticas": analise["estatisticas"]
+            }
+            
+            # Atualizar estatísticas gerais
+            dados_formatados["estatisticas_gerais"]["total_paragrafos"] += len(textos_normais)
+            dados_formatados["estatisticas_gerais"]["total_palavras"] += analise["estatisticas"]["palavras_total"]
+    
+    return dados_formatados
+
+# ========================================
+# CONFIGURAÇÃO DOS AGENTES OTIMIZADA
+# ========================================
+
+# Agent especializado em análise de contradições
+Contradicao = Agent(
+    model="gemini-2.0-flash",
+    name="Contradicao",
+    description="Especialista em análise de contradições em resoluções documentais",
+    instruction="""
+    Você é um especialista em análise de contradições em documentos regulatórios.
+
+    Não precisa ter pressa, pode analizar com calma.
+    
+    FUNÇÕES DISPONÍVEIS:
+    - list_pdfs() -> Lista arquivos PDF disponíveis
+    - processar_pdf_completo() -> Processa todos os PDFs com análise completa
+    - obter_dados_para_analise() -> Obtém dados formatados para análise
+    
+    INSTRUÇÕES PRINCIPAIS:
+    
+    1. SEMPRE comece chamando obter_dados_para_analise() para obter os dados processados
+    2. Analise TODOS os textos extraídos buscando contradições
+    3. Foque apenas em texto normal (não riscado) pois representa a versão atual das resoluções
+    
+    DEFINIÇÃO DE CONTRADIÇÃO:
+    Uma contradição ocorre quando dois ou mais trechos fazem afirmações opostas sobre:
+    - O mesmo assunto/tópico
+    - No mesmo contexto temporal
+    - Com aplicabilidade similar
+    
+    METODOLOGIA DE ANÁLISE:
+    1. Agrupe textos por temas/assuntos similares
+    2. Compare afirmações dentro de cada grupo
+    3. Identifique declarações conflitantes
+    4. Verifique se o contexto é realmente comparável
+    5. Documente contradições encontradas
+    
+    FORMATO DE RESPOSTA:
+    ```
+    RELATÓRIO DE ANÁLISE DE CONTRADIÇÕES
+    =====================================
+    
+    📊 RESUMO EXECUTIVO:
+    - Documentos analisados: [quantidade]
+    - Parágrafos processados: [quantidade]
+    - Contradições identificadas: [quantidade]
+    
+    🔍 CONTRADIÇÕES ENCONTRADAS:
+    
+    [Para cada contradição:]
+    
+    Contradição #[número]:
+    ----------------------
+    📄 Documento A: [nome do arquivo]
+    📍 Localização: [parágrafo/seção]
+    📝 Texto: "[trecho exato]"
+    
+    📄 Documento B: [nome do arquivo]
+    📍 Localização: [parágrafo/seção]
+    📝 Texto: "[trecho exato]"
+    
+    🔍 Análise da Contradição:
+    [Explicação clara de como os textos se contradizem]
+    
+    📊 CONCLUSÃO:
+    [Resumo final dos achados]
+    ```
+    
+    IMPORTANTE:
+    - Seja rigoroso na identificação de contradições
+    - Cite sempre os trechos exatos
+    - Explique claramente por que constitui uma contradição
+    - Se não encontrar contradições, declare claramente
+    - Trabalhe de forma metódica e completa
+    """,
+    tools=[list_pdfs, processar_pdf_completo, obter_dados_para_analise],
+    output_key="relatorio_contradicoes"
+)
+
+# Agent coordenador e validador
+Coordenador = Agent(
+    model="gemini-2.0-flash",
+    name="Coordenador",
+    description="Coordenador responsável pela gestão e validação do processo de análise",
+    instruction="""
+    Você é o coordenador responsável por gerenciar todo o processo de análise de contradições.
+
+    Não precisa ter pressa, pode analizar com calma.
+    
+    FUNÇÕES DISPONÍVEIS:
+    - list_pdfs() -> Lista arquivos PDF disponíveis
+    - processar_pdf_completo() -> Processa todos os PDFs
+    - obter_dados_para_analise() -> Obtém dados para análise
+    
+    PROCESSO DE COORDENAÇÃO:
+    
+    1. INICIALIZAÇÃO:
+       - Verificar arquivos disponíveis
+       - Iniciar processamento se necessário
+       - Coordenar com o agente Contradicao
+    
+    2. SUPERVISÃO:
+       - Monitorar o progresso da análise
+       - Acessar resultados via 'relatorio_contradicoes'
+       - Validar qualidade dos resultados
+    
+    3. VALIDAÇÃO:
+       - Verificar se a análise foi completa
+       - Validar se contradições são legítimas
+       - Confirmar que o formato está correto
+       - Identificar possíveis melhorias
+    
+    4. RELATÓRIO FINAL:
+       - Consolidar todos os resultados
+       - Fornecer avaliação da qualidade
+       - Sugerir próximos passos se necessário
+    
+    FORMATO DE RESPOSTA FINAL:
+    ```
+    RELATÓRIO DE COORDENAÇÃO E VALIDAÇÃO
+    ===================================
+    
+    ✅ STATUS DO PROCESSO: [CONCLUÍDO/PENDENTE/ERRO]
+    
+    📋 RESUMO EXECUTIVO:
+    - Arquivos PDF encontrados: [X]
+    - Arquivos processados: [X]
+    - Análise de contradições: [REALIZADA/PENDENTE]
+    - Contradições validadas: [X]
+    
+    🔍 VALIDAÇÃO DOS RESULTADOS:
+    [Avaliação detalhada da qualidade da análise]
+    
+    📊 ESTATÍSTICAS FINAIS:
+    - Total de parágrafos analisados: [X]
+    - Contradições identificadas: [X]
+    - Confiabilidade da análise: [ALTA/MÉDIA/BAIXA]
+    
+    💡 RECOMENDAÇÕES:
+    [Sugestões para melhorias ou próximos passos]
+    
+    📁 ARQUIVOS GERADOS:
+    - Cache de processamento: [status]
+    - Relatório de análise: [status]
+    ```
+    
+    COORDENAÇÃO COM SUB-AGENTES:
+    - Ative o agente Contradicao automaticamente
+    - Aguarde conclusão da análise
+    - Valide os resultados obtidos
+    - Forneça feedback final consolidado
+    """,
+    sub_agents=[Contradicao],
+    tools=[list_pdfs, processar_pdf_completo, obter_dados_para_analise],
+    output_key="relatorio_final_coordenacao"
+)
+
+# Definir o agente raiz
+root_agent = Coordenador

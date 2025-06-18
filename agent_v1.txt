@@ -15,11 +15,6 @@ OpenAi_model = LiteLlm(
     api_key=os.getenv('OPENAI_API_KEY')
 )
 
-DeepSeek_model = LiteLlm(
-    model="deepseek/deepseek-chat",
-    api_key=os.getenv('DEEPSEEK_API_KEY')
-)
-
 # Configuração dos caminhos - usando variáveis de ambiente para flexibilidade
 BASE_PATH = os.getenv('DOCUMENTS_PATH', r"D:\cod\Arsae\Adk\Projeto_Adk_resolucoes\Adm_agentes\documentos")
 
@@ -181,7 +176,7 @@ def obter_dados_processados() -> dict:
 
 # Agent para análise de contradições
 Contradicao = Agent(
-    model = "gemini-2.5-flash",
+    model = "gemini-2.0-flash",
     name="Contradicao",
     description="Agent responsible for analyzing contradictions in resolutions.",
     instruction=f"""
@@ -198,13 +193,6 @@ Contradicao = Agent(
 
     1. Use obter_dados_processados() to get all document content processed
     2. Analyze the extracted text looking for contradictions between resolutions
-        ANALYSIS METHODOLOGY:
-        1. Group texts by similar themes/subjects
-        2. Compare statements within each group
-        3. Identify conflicting statements
-        4. Check if the context is really comparable
-        5. Document contradictions found
-    
     3. Contradictions can be within one document or across multiple documents
     4. Check all resolutions between all processed documents
     
@@ -267,7 +255,7 @@ Contradicao = Agent(
 
 # Agent administrador para validação
 Adm_agentes = Agent(
-    model = "gemini-2.5-flash",
+    model = "gemini-2.0-flash", 
     name="Adm_agentes",
     description="Agent responsible for managing and validating the work of other agents.",
     instruction="""
