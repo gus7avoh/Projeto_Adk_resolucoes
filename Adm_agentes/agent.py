@@ -120,7 +120,7 @@ def analisar_texto_riscado(docx_path: str) -> dict:
         print(f"Erro ao analisar documento DOCX: {str(e)}")
         return {"textos_riscados": [], "textos_normais": [], "erro": str(e)}
 
-def processar_pdf() -> dict:
+def obter_dados_processados()-> dict:
     """
     Processa todos os PDFs convertendo para DOCX e analisando o texto riscado.
     
@@ -171,13 +171,6 @@ def processar_pdf() -> dict:
         "resultados": resultados,
         "sucesso": True
     }
-
-def obter_dados_processados() -> dict:
-    """
-    Obtém os dados processados para análise.
-    Esta função pode ser expandida para incluir cache ou armazenamento persistente.
-    """
-    return processar_pdf()
 
 # Agent para análise de contradições
 Contradicao = Agent(
@@ -261,7 +254,7 @@ Contradicao = Agent(
     - Thoroughly analyze all available text content
     - Save your complete analysis for validation by Adm_agentes
     """,
-    tools=[list_pdfs, processar_pdf, obter_dados_processados],
+    tools=[list_pdfs, obter_dados_processados],
     output_key="analise_contradicoes"
 )
 
@@ -315,7 +308,7 @@ Adm_agentes = Agent(
      1. When the analysis starts, coordinate with the Contradicao agent to perform document analysis
     """,
     sub_agents=[Contradicao],
-    tools=[list_pdfs, processar_pdf, obter_dados_processados],
+    tools=[list_pdfs, obter_dados_processados],
     output_key="validacao_final"
 )
 
