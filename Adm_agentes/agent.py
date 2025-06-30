@@ -1,12 +1,13 @@
 # Imports corretos para Google ADK
 from google.adk.agents import LlmAgent
-from google.adk.agents import Agent
 from google.adk.models.lite_llm import LiteLlm
 import os
 from pathlib import Path
 from dotenv import load_dotenv
 from pdf2docx import Converter
 from docx import Document
+import json
+from google.adk.agents import Agent
 
 load_dotenv()
 
@@ -20,12 +21,10 @@ DeepSeek_model = LiteLlm(
     api_key=os.getenv('DEEPSEEK_API_KEY')
 )
 
-# Configuração dos caminhos - usando variáveis de ambiente para flexibilidade
+# Configuração dos caminhos
 BASE_PATH = os.getenv('DOCUMENTS_PATH', r"D:\cod\Arsae\Adk\Projeto_Adk_resolucoes\Adm_agentes\documentos")
 
-# Verificar e criar diretórios se necessário
 def ensure_directories():
-    """Garante que os diretórios necessários existam."""
     try:
         os.makedirs(BASE_PATH, exist_ok=True)
         return True
@@ -34,59 +33,34 @@ def ensure_directories():
         return False
 
 def list_pdfs() -> list:
-    """Lista todos os arquivos PDF disponíveis."""
     try:
         if not os.path.exists(BASE_PATH):
             print(f"Diretório {BASE_PATH} não existe.")
             return []
-        
-        pdfs = [f for f in os.listdir(BASE_PATH) if f.lower().endswith('.pdf')]
-        return pdfs
-    
+        return [f for f in os.listdir(BASE_PATH) if f.lower().endswith('.pdf')]
     except Exception as e:
         print(f"Erro ao listar arquivos: {str(e)}")
         return []
 
 def converter_pdf_para_docx(pdf_path: str, docx_path: str) -> bool:
-    """
-    Converte um arquivo PDF para DOCX.
-    
-    Args:
-        pdf_path (str): Caminho completo para o arquivo PDF
-        docx_path (str): Caminho completo para o arquivo DOCX de saída
-    
-    Returns:
-        bool: True se a conversão foi bem-sucedida, False caso contrário
-    """
     try:
         if not os.path.exists(pdf_path):
             print(f"Arquivo PDF não encontrado: {pdf_path}")
             return False
-            
         cv = Converter(pdf_path)
         cv.convert(docx_path)
         cv.close()
         print(f"PDF convertido com sucesso: {os.path.basename(pdf_path)}")
         return True
     except Exception as e:
-        print(f"Erro ao converter PDF para DOCX ({os.path.basename(pdf_path)}): {str(e)}")
+        print(f"Erro ao converter PDF: {str(e)}")
         return False
 
 def analisar_texto_riscado(docx_path: str) -> dict:
-    """
-    Analisa o documento DOCX procurando por texto riscado.
-    
-    Args:
-        docx_path (str): Caminho para o arquivo DOCX
-    
-    Returns:
-        dict: Dicionário com textos riscados e normais
-    """
     try:
         if not os.path.exists(docx_path):
-            print(f"Arquivo DOCX não encontrado: {docx_path}")
             return {"textos_riscados": [], "textos_normais": [], "erro": "Arquivo não encontrado"}
-        
+
         doc = Document(docx_path)
         textos_riscados = []
         textos_normais = []
@@ -95,170 +69,136 @@ def analisar_texto_riscado(docx_path: str) -> dict:
             texto = paragraph.text.strip()
             if not texto:
                 continue
-
-            tem_risco = False
-            for run in paragraph.runs:
-                if run.font.strike:
-                    tem_risco = True
-                    break
-
-            if tem_risco:
+            if any(run.font.strike for run in paragraph.runs):
                 textos_riscados.append(texto)
-                print(f"Texto riscado encontrado: {texto[:50]}...")
             else:
                 textos_normais.append(texto)
 
-        print(f"Análise completa - Textos riscados: {len(textos_riscados)}, Textos normais: {len(textos_normais)}")
-        
         return {
-            #"textos_riscados": textos_riscados,
             "textos_normais": textos_normais,
             "total_paragrafos": len(textos_riscados) + len(textos_normais)
         }
-
     except Exception as e:
-        print(f"Erro ao analisar documento DOCX: {str(e)}")
         return {"textos_riscados": [], "textos_normais": [], "erro": str(e)}
 
-def obter_dados_processados()-> dict:
-    """
-    Processa todos os PDFs convertendo para DOCX e analisando o texto riscado.
-    
-    Returns:
-        dict: Dicionário com resultados do processamento de cada arquivo
-    """
-    # Garantir que os diretórios existam
+def obter_dados_processados() -> dict:
     if not ensure_directories():
         return {"erro": "Não foi possível criar/acessar os diretórios necessários"}
-    
     resultados = {}
     arquivos_pdf = list_pdfs()
-    
     if not arquivos_pdf:
         return {"erro": "Nenhum arquivo PDF encontrado", "arquivos_processados": 0}
-    
-    print(f"Encontrados {len(arquivos_pdf)} arquivos PDF para processar")
-    
     for arquivo_pdf in arquivos_pdf:
-        print(f"\nProcessando: {arquivo_pdf}")
-        
-        # Construir caminhos completos
         pdf_path = os.path.join(BASE_PATH, arquivo_pdf)
         nome_base = os.path.splitext(arquivo_pdf)[0]
         docx_path = os.path.join(BASE_PATH, f"{nome_base}.docx")
-        
-        # Converter PDF para DOCX
-        sucesso_conversao = converter_pdf_para_docx(pdf_path, docx_path)
-        
-        if sucesso_conversao:
-            # Analisar texto riscado
+        if converter_pdf_para_docx(pdf_path, docx_path):
             resultado_analise = analisar_texto_riscado(docx_path)
-            resultados[arquivo_pdf] = {
-                "convertido": True,
-                "caminho_docx": docx_path,
-                "analise": resultado_analise
-            }
+            resultados[arquivo_pdf] = {"convertido": True, "caminho_docx": docx_path, "analise": resultado_analise}
         else:
-            resultados[arquivo_pdf] = {
-                "convertido": False,
-                "erro": "Falha na conversão",
-                "analise": None
-            }
-    
-    print(f"\nProcessamento concluído. {len(resultados)} arquivos processados.")
-    return {
-        "arquivos_processados": len(resultados),
-        "resultados": resultados,
-        "sucesso": True
-    }
+            resultados[arquivo_pdf] = {"convertido": False, "erro": "Falha na conversão", "analise": None}
+    return {"arquivos_processados": len(resultados), "resultados": resultados, "sucesso": True}
 
-# Agent para análise de contradições
-Contradicao = Agent(
-    model = "gemini-2.5-flash",
-    name="Contradicao",
-    description="Agent responsible for analyzing contradictions in resolutions.",
-    instruction=f"""
-    You are a specialist in finding contradictions in documents.
-    
-    Functions available for you to use:
-    - list_pdfs() -> list - List all available PDF files
-    - processar_pdf() -> dict - Process all PDF files to extract content in a dictionary format
-    - obter_dados_processados() -> dict - Get processed data for analysis
-  
-    INSTRUCTIONS:
+pdfs = list_pdfs()
+todos_dados = obter_dados_processados()
+todas_analises = {}
 
-    calm down, you don't need to rush, you have all the time in the world to analyze the documents.
+for nome_pdf in pdfs:
+    dados_pdf = todos_dados['resultados'].get(nome_pdf)
+    if not dados_pdf:
+        continue
+    Contradiction_single_document = Agent(
+        model = "gemini-2.5-flash",
+        name="Contradicao",
+        description="Agent responsible for analyzing contradictions in a single resolution.",
+        instruction=f"""
+        You are a specialist in finding contradictions in a single resolution document.
+        
+        Functions available for you to use:
+        - list_pdfs() -> list - List all available PDF files
+        - dados_pdf -> dict - Get processed data for analysis
+    
+        INSTRUCTIONS:
 
-    1. Use obter_dados_processados() to get all document content processed
-    2. Analyze the extracted text looking for contradictions between resolutions
-        ANALYSIS METHODOLOGY:
-        1. Group texts by similar themes/subjects
-        2. Compare statements within each group
-        3. Identify conflicting statements
-        4. Check if the context is really comparable
-        5. Document contradictions found
-    
-    3. Contradictions can be within one document or across multiple documents
-    4. Check all resolutions between all processed documents
-    
-    5. What is a contradiction?
-        In the context of document analysis by AI models, a contradiction occurs when two or more documents (or resolutions) make directly opposing claims about the same subject or topic within a comparable context.
-        Key considerations for contradiction detection:
-        Contextual alignment is essential: The AI must evaluate the semantic context, not just perform keyword matching.
-        Topic consistency: Both statements must refer to the same topic or entity. Differences across unrelated subjects do not constitute a contradiction.
-        Temporal and conditional scope: Dates, conditions, and specific circumstances must also align. Contradictions only exist when both statements apply to the same time frame and scenario.
-        Example scenario for AI contradiction detection:
-        Document A: "The water tariff will increase in July 2025."
-        Document B: "The water tariff will decrease in July 2025."
-        → This represents a clear contradiction: same topic, same time frame, opposite claims.
-        Non-contradiction example (different topics):
-        Document A: "The water tariff will increase in July 2025."
-        Document B: "Wastewater treatment charges will decrease in July 2025."
-        → No contradiction: different topics.
+        You need to analize this document only: {nome_pdf}
 
-    6. Cite the specific excerpts from the documents where contradictions occur
-    7. Focus only on content contradictions, not grammar errors or formatting issues
-    8. If no contradictions are found, clearly state that no contradictions were detected
-    9. Be objective and clear in your responses
-    10. When activated, perform your analysis without waiting for additional instructions
-    11. Save your analysis results in the output for validation by Adm_agentes
-    12. When you finish your job, transfer to Adm_agentes for validation
+        calm down, you don't need to rush, you have all the time in the world to analyze the document.
 
-    RESPONSE FORMAT:
-    ----------------------------------------------------------------------------------------------------------------
-    ANÁLISE DE CONTRADIÇÕES:
-    
-    - Documentos analisados: [lista dos arquivos processados]
-    - Número de contradições encontradas: [número]
-    
-    Para cada contradição encontrada, use o seguinte formato:
-    
-    Contradição [número]:
-    
-    📄 Documento: [nome do documento 1]
-    📍 Localização: [parágrafo/seção específica]
-    📝 Trecho: "[trecho exato do texto]"
-    
-    📄 Documento: [nome do documento 2]  
-    📍 Localização: [parágrafo/seção específica]
-    📝 Trecho: "[trecho exato do texto]"
-    
-    🔍 Explicação da Contradição:
-    [Detalhes claros sobre como os trechos se contradizem]
-    
-    ----------------------------------------------------------------------------------------------------------------
+        1. Use dados_pdf to get the data for the document you are analyzing
+        2. Analyze the extracted text looking for contradictions in a single resolution
+            ANALYSIS METHODOLOGY:
+            1. Group texts by similar themes/subjects
+            2. Compare statements within each group
+            3. Identify conflicting statements
+            4. Check if the context is really comparable
+            5. Document contradictions found
+        3. Contradictions can be within one document
+        4. Check all resolutions within the same document
 
-    IMPORTANT:
-    - When you finish your job, transfer to Adm_agentes for validation
-    - Always call obter_dados_processados() first to get the processed data
-    - Thoroughly analyze all available text content
-    - Save your complete analysis for validation by Adm_agentes
-    """,
-    tools=[list_pdfs, obter_dados_processados],
-    output_key="analise_contradicoes"
-)
+        5. What is a contradiction?
+            In the context of document analysis by AI models, a contradiction occurs when two or more resolutions make directly opposing claims about the same subject or topic within a comparable context.
+            Key considerations for contradiction detection:
+            Contextual alignment is essential: The AI must evaluate the semantic context, not just perform keyword matching.
+            Topic consistency: Both statements must refer to the same topic or entity. Differences across unrelated subjects do not constitute a contradiction.
+            Temporal and conditional scope: Dates, conditions, and specific circumstances must also align. Contradictions only exist when both statements apply to the same time frame and scenario.
+            Example scenario for AI contradiction detection:
+            Document A: "The water tariff will increase in July 2025."
+            Document B: "The water tariff will decrease in July 2025."
+            → This represents a clear contradiction: same topic, same time frame, opposite claims.
+            Non-contradiction example (different topics):
+            Document A: "The water tariff will increase in July 2025."
+            Document B: "Wastewater treatment charges will decrease in July 2025."
+            → No contradiction: different topics.
 
-# Agent administrador para validação
+        6. Cite the specific excerpts from the document where contradictions occur
+        7. Focus only on content contradictions, not grammar errors or formatting issues
+        8. If no contradictions are found, clearly state that no contradictions were detected
+        9. Be objective and clear in your responses
+        10. When activated, perform your analysis without waiting for additional instructions
+        11. Save your analysis results in the output for validation by Adm_agentes
+
+        RESPONSE FORMAT:
+        ----------------------------------------------------------------------------------------------------------------
+        ANÁLISE DE CONTRADIÇÕES:
+        
+        - Documentos analisados: [lista dos arquivos processados]
+        - Número de contradições encontradas: [número]
+        
+        Para cada contradição encontrada, use o seguinte formato:
+        
+        Contradição [número]:
+        
+        📄 Documento: [nome do documento 1]
+        📍 Localização: [parágrafo/seção específica]
+        📝 Trecho: "[trecho exato do texto]"
+        
+        📄 Documento: [nome do documento 2]  
+        📍 Localização: [parágrafo/seção específica]
+        📝 Trecho: "[trecho exato do texto]"
+        
+        🔍 Explicação da Contradição:
+        [Detalhes claros sobre como os trechos se contradizem]
+        
+        ----------------------------------------------------------------------------------------------------------------
+
+        IMPORTANT:
+
+        - Always call dados_pdf first to get the processed data
+        - Thoroughly analyze all available text content
+        - Save your complete analysis for validation by Adm_agentes
+        """,
+        tools=[list_pdfs],
+        output_key="analise_contradicoes"
+    )
+    resultado_analise = "analise_contradicoes"
+    todas_analises[nome_pdf] = resultado_analise
+    nome_base = os.path.splitext(nome_pdf)[0]
+    with open(rf"D:\cod\Arsae\Adk\Projeto_Adk_resolucoes\Adm_agentes\dados\analise_{nome_base}.json", "w", encoding="utf-8") as f:
+        json.dump({"documento": nome_pdf, "analise": resultado_analise, "timestamp": __import__('datetime').datetime.now().isoformat()}, f, ensure_ascii=False, indent=4)
+
+with open(r"D:\cod\Arsae\Adk\Projeto_Adk_resolucoes\Adm_agentes\dados\analises_individuais_consolidado.json", "w", encoding="utf-8") as f:
+    json.dump({"total_documentos": len(todas_analises), "analises": todas_analises, "timestamp": __import__('datetime').datetime.now().isoformat()}, f, ensure_ascii=False, indent=4)
+
 Adm_agentes = Agent(
     model = "gemini-2.5-flash",
     name="Adm_agentes",
@@ -272,7 +212,7 @@ Adm_agentes = Agent(
     - obter_dados_processados() -> dict - Get processed data for analysis
 
     INSTRUCTIONS:
-    1. When the analysis starts, coordinate with the Contradicao agent to perform document analysis
+    1. When the analysis starts, coordinate with the Contradiction_single_document = Agent to perform document analysis
     2. Access the analysis results through the 'analise_contradicoes' output
     3. Validate if the contradictions found are real and meaningful
     4. Check if the agent properly processed all available documents
@@ -307,10 +247,13 @@ Adm_agentes = Agent(
     IMPORTANT:
      1. When the analysis starts, coordinate with the Contradicao agent to perform document analysis
     """,
-    sub_agents=[Contradicao],
     tools=[list_pdfs, obter_dados_processados],
     output_key="validacao_final"
 )
 
-# Variável que o ADK procura para o agente raiz
+validacao_final = todas_analises
+
+with open(r"D:\cod\Arsae\Adk\Projeto_Adk_resolucoes\Adm_agentes\dados\validacao_final.json", "w", encoding="utf-8") as f:
+    json.dump({"validacao": validacao_final, "timestamp": __import__('datetime').datetime.now().isoformat()}, f, ensure_ascii=False, indent=4)
+
 root_agent = Adm_agentes
