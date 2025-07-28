@@ -13,19 +13,20 @@ from datetime import datetime
 from typing import Dict, Any, List
 import logging
 import json
+import time # Importar para usar time.sleep
 
 import Adm_agentes.tools.ferramentas as ferramentas
 
 load_dotenv()
 
 # Configuração dos caminhos - usando variáveis de ambiente para flexibilidade
-BASE_PATH = os.getenv('DOCUMENTS_PATH', r"D:\cod\Arsae\Adk\Projeto_Adk_resolucoes\Adm_agentes\documentos")
+BASE_PATH = os.getenv("DOCUMENTS_PATH", r"D:\cod\Arsae\Adk\Projeto_Adk_resolucoes\Adm_agentes\documentos")
 # Criar diretório de logs se não existir
 Path("logs").mkdir(exist_ok=True)
 
 
 # Configuração básica de logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(levelname)s | %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 logger = logging.getLogger("FluxoAgentes")
 
 class ContextoAnalise:
@@ -80,7 +81,7 @@ def executar_analise_documentos():
         contexto.adicionar_log("Sistema", "erro", f"Falha ao processar PDFs: {str(e)}")
         return None
 
-    # Etapa 3: Executar agentes em sequência
+    # Etapa 3: Executar agentes em sequência com retentativa
     agentes = [
         ("Contradicao", Contradicao),
         ("OrtografiaGramatica", OrtografiaGramatica),
@@ -88,23 +89,38 @@ def executar_analise_documentos():
         ("Adm_agentes", Adm_agentes)
     ]
 
+    MAX_RETRIES = 3
+    RETRY_DELAY_SECONDS = 5
+
     for nome, agente in agentes:
-        try:
-            contexto.adicionar_log(nome, "iniciando", "Agente ativado")
-            
-            # Executa o agente
-            resultado = agente.run()
-            
-            # Salva o resultado
-            contexto.salvar_resultado(nome, resultado)
-            
-            # Verifica se houve erro no formato (opcional)
-            if hasattr(resultado, "status_analise") and resultado.status_analise == "Necessita Correção":
-                contexto.adicionar_log(nome, "alerta", "Análise precisa de correção")
+        retries = 0
+        while retries <= MAX_RETRIES:
+            try:
+                contexto.adicionar_log(nome, "iniciando", f"Agente ativado (Tentativa {retries + 1}/{MAX_RETRIES + 1})")
                 
-        except Exception as e:
-            contexto.adicionar_log(nome, "erro", f"Falha na execução: {str(e)}")
-            break  # Interrompe se um agente falhar
+                # Executa o agente
+                resultado = agente.run()
+                
+                # Salva o resultado
+                contexto.salvar_resultado(nome, resultado)
+                
+                # Verifica se houve erro no formato (opcional)
+                if hasattr(resultado, "status_analise") and resultado.status_analise == "Necessita Correção":
+                    contexto.adicionar_log(nome, "alerta", "Análise precisa de correção")
+                break  # Sai do loop de retentativa se o agente for bem-sucedido
+
+            except Exception as e:
+                error_message = str(e)
+                if "INTERNAL" in error_message and "500" in error_message:
+                    contexto.adicionar_log(nome, "erro", f"Erro INTERNO (500) na execução: {error_message}. Tentando novamente em {RETRY_DELAY_SECONDS} segundos...")
+                    retries += 1
+                    time.sleep(RETRY_DELAY_SECONDS)
+                else:
+                    contexto.adicionar_log(nome, "erro", f"Falha na execução: {error_message}")
+                    break  # Interrompe se for um erro diferente de INTERNAL ou se exceder as retentativas
+        else:
+            contexto.adicionar_log(nome, "erro", f"Agente {nome} falhou após {MAX_RETRIES + 1} tentativas devido a erro INTERNO (500).")
+            break # Interrompe o fluxo principal se o agente falhar após todas as retentativas
 
     # Etapa 4: Salvar log completo (opcional: salvar em arquivo)
     try:
@@ -116,22 +132,6 @@ def executar_analise_documentos():
 
     # Etapa 5: Retornar contexto final (para auditoria ou UI)
     return contexto
-
-class ContradicaoDetalhe(BaseModel):
-    documento_1: str
-    localizacao_1: str
-    trecho_1: str
-    documento_2: str
-    localizacao_2: str
-    trecho_2: str
-    explicacao: str
-
-class ContraducaoResponse(BaseModel):
-    contradicao: bool = Field(..., description="Indica se foram encontradas contradições")
-    documentos_analisados: List[str] = Field(default_factory=list, description="Lista dos arquivos processados")
-    numero_contradicoes: int = Field(default=0, description="Número total de contradições encontradas")
-    contradicoes: List[ContradicaoDetalhe] = Field(default_factory=list, description="Lista detalhada das contradições")
-    observacao: Optional[str] = Field(default=None, description="Mensagem quando nenhuma contradição é encontrada")
 
 # Agent para análise de contradições
 Contradicao = Agent(
@@ -148,7 +148,7 @@ Contradicao = Agent(
   
     INSTRUCTIONS:
 
-    calm down, you don't need to rush, you have all the time in the world to analyze the documents.
+    calm down, you don\'t need to rush, you have all the time in the world to analyze the documents.
 
     1. Use obter_dados_processados() to get all document content processed
     2. Analyze the extracted text looking for contradictions between resolutions
@@ -169,12 +169,12 @@ Contradicao = Agent(
         Topic consistency: Both statements must refer to the same topic or entity. Differences across unrelated subjects do not constitute a contradiction.
         Temporal and conditional scope: Dates, conditions, and specific circumstances must also align. Contradictions only exist when both statements apply to the same time frame and scenario.
         Example scenario for AI contradiction detection:
-        Document A: "The water tariff will increase in July 2025."
-        Document B: "The water tariff will decrease in July 2025."
+        Document A: \"The water tariff will increase in July 2025.\"
+        Document B: \"The water tariff will decrease in July 2025.\"
         → This represents a clear contradiction: same topic, same time frame, opposite claims.
         Non-contradiction example (different topics):
-        Document A: "The water tariff will increase in July 2025."
-        Document B: "Wastewater treatment charges will decrease in July 2025."
+        Document A: \"The water tariff will increase in July 2025.\"
+        Document B: \"Wastewater treatment charges will decrease in July 2025.\"
         → No contradiction: different topics.
 
     6. Cite the specific excerpts from the documents where contradictions occur
@@ -187,83 +187,35 @@ Contradicao = Agent(
 
     RESPONSE FORMAT (JSON):
     {{
-      "contradicao": true|false,
-      "documentos_analisados": ["arquivo1.pdf", "arquivo2.pdf", ...],
-      "numero_contradicoes": 0|1|2|...,
-      "contradicoes": [
+      \"contradicao\": true|false,
+      \"documentos_analisados\": [\"arquivo1.pdf\", \"arquivo2.pdf\", ...],
+      \"numero_contradicoes\": 0|1|2|...,
+      \"contradicoes\": [
         {{
-          "documento_1": "nome_do_documento_1.pdf",
-          "localizacao_1": "Seção 3, Parágrafo 2",
-          "trecho_1": "O valor será reduzido a partir de janeiro de 2025.",
-          "documento_2": "nome_do_documento_2.pdf",
-          "localizacao_2": "Cláusula 5, Item B",
-          "trecho_2": "O valor será aumentado a partir de janeiro de 2025.",
-          "explicacao": "Ambos os documentos tratam do mesmo valor e período, mas indicam direções opostas (redução vs aumento), caracterizando uma contradição direta."
+          \"documento_1\": \"nome_do_documento_1.pdf\",
+          \"localizacao_1\": \"Seção 3, Parágrafo 2\",
+          \"trecho_1\": \"O valor será reduzido a partir de janeiro de 2025.\",
+          \"documento_2\": \"nome_do_documento_2.pdf\",
+          \"localizacao_2\": \"Cláusula 5, Item B\",
+          \"trecho_2\": \"O valor será aumentado a partir de janeiro de 2025.\",
+          \"explicacao\": \"Ambos os documentos tratam do mesmo valor e período, mas indicam direções opostas (redução vs aumento), caracterizando uma contradição direta.\"
         }}
       ],
-      "observacao": "Nenhuma contradição foi encontrada entre os documentos analisados." (apenas se contradicao == false)
+      \"observacao\": \"Nenhuma contradição foi encontrada entre os documentos analisados.\" (apenas se contradicao == false)
     }}
 
     IMPORTANT:
     - Respond ONLY in valid JSON format, strictly adhering to the structure above.
     - DO NOT include any additional text, explanations, markdown, or formatting outside the JSON.
-    - When contradicao is false, include 'observacao' explaining no contradictions were found.
+    - When contradicao is false, include \'observacao\' explaining no contradictions were found.
     - Always call obter_dados_processados() first to get the processed data
     - Thoroughly analyze all available text content
     - Save your complete analysis for validation by Adm_agentes
     - After generating the JSON, transfer to OrtografiaGramatica
     """,
     tools=[ferramentas.list_pdfs, ferramentas.obter_dados_processados],
-    output_schema=ContraducaoResponse,  
     output_key="analise_contradicoes"
 )
-
-
-# Tipos de erro permitidos (para garantir consistência)
-TipoErro = Literal[
-    "Ortografia",
-    "Concordância verbal",
-    "Concordância nominal",
-    "Regência",
-    "Pontuação",
-    "Crase",
-    "Colocação pronominal",
-    "Flexão verbal",
-    "Flexão nominal",
-    "Uso de conectores",
-    "Ambiguidade gramatical",
-    "Outro"
-]
-
-class ErroGramatical(BaseModel):
-    documento: str = Field(..., description="Nome do arquivo PDF ou documento")
-    localizacao: str = Field(..., description="Seção, parágrafo, página ou posição no texto")
-    trecho_original: str = Field(..., description="Trecho exato com o erro")
-    sugestao_correcao: str = Field(..., description="Versão corrigida do trecho")
-    tipo_erro: TipoErro = Field(..., description="Categoria do erro gramatical ou ortográfico")
-    justificativa: str = Field(..., description="Explicação breve com base na norma culta")
-
-class OrtografiaGramaticaResponse(BaseModel):
-    ortografia_gramatica: bool = Field(
-        ...,
-        description="True se foram encontrados erros; False se o texto está correto"
-    )
-    documentos_analisados: List[str] = Field(
-        default_factory=list,
-        description="Lista de arquivos processados"
-    )
-    total_erros: int = Field(
-        default=0,
-        description="Número total de erros identificados"
-    )
-    erros: List[ErroGramatical] = Field(
-        default_factory=list,
-        description="Lista detalhada dos erros encontrados"
-    )
-    observacao: Optional[str] = Field(
-        default=None,
-        description="Mensagem quando nenhum erro é encontrado"
-    )
 
 OrtografiaGramatica = Agent(
     model="gemini-2.5-flash",
@@ -287,8 +239,8 @@ OrtografiaGramatica = Agent(
     3- Analyze the texts based on the norms of the Portuguese language (spelling, agreement, regency, punctuation, correct use of verb tenses, etc.)
     4- Point out the identified errors and suggest the correct form of writing
     5- Pay special attention to common mistakes such as:
-        - Letter changes or outdated spelling (e.g., 'idéia' → 'ideia')
-        - Use of accent marks after the AO90 (e.g., 'pára' → 'para')
+        - Letter changes or outdated spelling (e.g., \'idéia\' → \'ideia\')
+        - Use of accent marks after the AO90 (e.g., \'pára\' → \'para\')
     6- Subject-verb and noun-adjective agreement
     7- Improper or missing punctuation
     8- Grammatical ambiguities
@@ -303,74 +255,35 @@ OrtografiaGramatica = Agent(
 
     RESPONSE FORMAT (JSON):
     {{
-      "ortografia_gramatica": true|false,
-      "documentos_analisados": ["arquivo1.pdf", "arquivo2.pdf"],
-      "total_erros": 0|1|2|...,
-      "erros": [
+      \"ortografia_gramatica\": true|false,
+      \"documentos_analisados\": [\"arquivo1.pdf\", \"arquivo2.pdf\"],
+      \"total_erros\": 0|1|2|...,
+      \"erros\": [
         {{
-          "documento": "resolucao_2025.pdf",
-          "localizacao": "Artigo 3, Parágrafo 2",
-          "trecho_original": "As ideias foram mal esclarecidas e não foi obedecido a norma.",
-          "sugestao_correcao": "As ideias foram mal esclarecidas e não foi obedecida a norma.",
-          "tipo_erro": "Concordância nominal",
-          "justificativa": "O verbo 'obedecido' deve concordar com o substantivo feminino 'norma'."
+          \"documento\": \"resolucao_2025.pdf\",
+          \"localizacao\": \"Artigo 3, Parágrafo 2\",
+          \"trecho_original\": \"As ideias foram mal esclarecidas e não foi obedecido a norma.\",
+          \"sugestao_correcao\": \"As ideias foram mal esclarecidas e não foi obedecida a norma.\",
+          \"tipo_erro\": \"Concordância nominal\",
+          \"justificativa\": \"O verbo \'obedecido\' deve concordar com o substantivo feminino \'norma\'.\"
         }}
       ],
-      "observacao": "Nenhum erro de ortografia ou gramática foi encontrado nos documentos analisados." (apenas se ortografia_gramatica == false)
+      \"observacao\": \"Nenhum erro de ortografia ou gramática foi encontrado nos documentos analisados.\" (apenas se ortografia_gramatica == false)
     }}
 
     IMPORTANT:
     - Respond ONLY in valid JSON format, strictly adhering to the structure above.
     - DO NOT include any additional text, markdown, explanations, or formatting outside the JSON.
-    - When ortografia_gramatica is false, include the 'observacao' field explaining no errors were found.
+    - When ortografia_gramatica is false, include the \'observacao\' field explaining no errors were found.
     - Always call obter_dados_processados() first to get the processed data
     - Save your complete analysis for validation by Ambiguidade
     - After generating the JSON, transfer to Ambiguidade
     """,
     tools=[ferramentas.list_pdfs, ferramentas.obter_dados_processados],
-    output_schema=OrtografiaGramaticaResponse,  
     output_key="analise_ortografia_gramatica"
 )
 
-# Tipos comuns de ambiguidade (para padronização)
-TipoAmbiguidade = Literal[
-    "Lexical",
-    "Sintática",
-    "Referencial",
-    "Escopo",
-    "Implícito/Informação faltando",
-    "Outro"
-]
 
-class AmbiguidadeDetalhe(BaseModel):
-    documento: str = Field(..., description="Nome do arquivo PDF ou documento")
-    localizacao: str = Field(..., description="Seção, parágrafo, página ou posição no texto")
-    trecho: str = Field(..., description="Trecho exato com ambiguidade")
-    tipo: TipoAmbiguidade = Field(..., description="Categoria da ambiguidade")
-    explicacao: str = Field(..., description="Explicação clara do porquê o trecho é ambíguo")
-    sugestao_reescrita: str = Field(..., description="Versão clara e inequívoca do trecho")
-
-class AmbiguidadeResponse(BaseModel):
-    ambiguidade: bool = Field(
-        ...,
-        description="True se foram encontradas ambiguidades; False se todos os trechos são claros"
-    )
-    documentos_analisados: List[str] = Field(
-        default_factory=list,
-        description="Lista de arquivos processados"
-    )
-    numero_ambiguidades: int = Field(
-        default=0,
-        description="Número total de ambiguidades identificadas"
-    )
-    ambiguidades: List[AmbiguidadeDetalhe] = Field(
-        default_factory=list,
-        description="Lista detalhada das ambiguidades encontradas"
-    )
-    observacao: Optional[str] = Field(
-        default=None,
-        description="Mensagem quando nenhuma ambiguidade é encontrada"
-    )
 Ambiguidade = Agent(
     model="gemini-2.5-flash",
     name="Ambiguidade",
@@ -385,7 +298,7 @@ Ambiguidade = Agent(
 
     INSTRUCTIONS:
 
-    calm down, you don't need to rush, you have all the time in the world to analyze the documents.
+    calm down, you don\'t need to rush, you have all the time in the world to analyze the documents.
 
     1. Use obter_dados_processados() to get all document content processed
     2. Analyze the extracted text looking for ambiguous expressions that may cause interpretation issues
@@ -407,18 +320,18 @@ Ambiguidade = Agent(
     Ambiguity occurs when a sentence or phrase allows **two or more possible interpretations**, causing uncertainty or confusion. It is problematic in legal, technical, and regulatory documents because it can lead to **misinterpretations, legal loopholes, or conflicting understandings**.
 
     🔁 Types of ambiguity:
-    - **Lexical ambiguity:** "banco" (could be a financial institution or a bench)
-    - **Syntactic ambiguity:** "O gerente demitiu o funcionário com problemas" → Who has the problems? The manager or the employee?
-    - **Referential ambiguity:** "Foi decidido que ele será o responsável." → Who is "ele"?
-    - **Scope ambiguity:** "Todos os usuários não precisam preencher o formulário." → Does it mean no user or only some?
+    - **Lexical ambiguity:** \"banco\" (could be a financial institution or a bench)
+    - **Syntactic ambiguity:** \"O gerente demitiu o funcionário com problemas\" → Who has the problems? The manager or the employee?
+    - **Referential ambiguity:** \"Foi decidido que ele será o responsável.\" → Who is \"ele\"?
+    - **Scope ambiguity:** \"Todos os usuários não precisam preencher o formulário.\" → Does it mean no user or only some?
 
     ✅ Non-ambiguous example:
-    "O gerente demitiu o funcionário que causava problemas técnicos."  
+    \"O gerente demitiu o funcionário que causava problemas técnicos.\"  
     → Specific and clear.
 
     🚫 Ambiguous example:
-    "O engenheiro relatou ao chefe que ele estava com dificuldades."  
-    → "Ele" refers to who? The engineer or the boss?
+    \"O engenheiro relatou ao chefe que ele estava com dificuldades.\"  
+    → \"Ele\" refers to who? The engineer or the boss?\"
 
     6. Focus only on **ambiguity of meaning**, not grammar or contradiction
     7. If no ambiguity is found, clearly state that no ambiguous expressions were detected
@@ -427,67 +340,30 @@ Ambiguidade = Agent(
 
     RESPONSE FORMAT (JSON):
     {{
-      "ambiguidade": true|false,
-      "documentos_analisados": ["arquivo1.pdf", "arquivo2.pdf"],
-      "numero_ambiguidades": 0|1|2|...,
-      "ambiguidades": [
+      \"ambiguidade\": true|false,
+      \"documentos_analisados\": [\"arquivo1.pdf\", \"arquivo2.pdf\"],
+      \"numero_ambiguidades\": 0|1|2|...,
+      \"ambiguidades\": [
         {{
-          "documento": "resolucao_2025.pdf",
-          "localizacao": "Artigo 5, Parágrafo 2",
-          "trecho": "O responsável deverá entregar o relatório ao diretor com urgência.",
-          "tipo": "Referencial",
-          "explicacao": "Não está claro se 'urgência' se aplica ao responsável ou ao diretor.",
-          "sugestao_reescrita": "O responsável deverá entregar com urgência o relatório ao diretor."
+          \"documento\": \"resolucao_2025.pdf\",
+          \"localizacao\": \"Artigo 5, Parágrafo 2\",
+          \"trecho\": \"O responsável deverá entregar o relatório ao diretor com urgência.\",
+          \"tipo\": \"Referencial\",
+          \"explicacao\": \"Não está claro se \'urgência\' se aplica ao responsável ou ao diretor.\",
+          \"sugestao_reescrita\": \"O responsável deverá entregar com urgência o relatório ao diretor.\"
         }}
       ],
-      "observacao": "Nenhuma ambiguidade foi identificada nos documentos analisados." (apenas se ambiguidade == false)
+      \"observacao\": \"Nenhuma ambiguidade foi identificada nos documentos analisados.\" (apenas se ambiguidade == false)
     }}
 
     IMPORTANT:
     - Respond ONLY in valid JSON format, strictly adhering to the structure above.
-    - DO NOT include any additional text, markdown, explanations, or formatting outside the JSON.
-    - When ambiguidade is false, include the 'observacao' field explaining no ambiguities were found.
-    - Always call obter_dados_processados() first to get the processed data
-    - Carefully analyze all text for potential misinterpretation
-    - Save your complete analysis for validation by Adm_agentes
-    - After generating the JSON, transfer your results to Adm_agentes
-    """,
+    - DO NOT include any additional text, mark
+(Content truncated due to size limit. Use line ranges to read in chunks)"
     tools=[ferramentas.list_pdfs, ferramentas.obter_dados_processados],
-    output_schema=AmbiguidadeResponse,  # ← Força a saída em JSON estruturado e validado
-    output_key="analise_ambiguidade"
+    output_key="analise_ambiguidade"""
 )
 
-# Tipos para padronizar o status
-StatusAnalise = Literal["Aprovada", "Necessita Correção"]
-
-# Modelo para problemas identificados (quando há falhas na análise dos agentes)
-class ProblemaValidacao(BaseModel):
-    agente: str = Field(..., description="Nome do agente com problema: Contradicao, OrtografiaGramatica ou Ambiguidade")
-    erro: str = Field(..., description="Descrição clara do erro encontrado na análise")
-    sugestao: str = Field(..., description="Sugestão de correção ou melhoria")
-
-# Modelo principal de resposta
-class AdmAgentesResponse(BaseModel):
-    status_analise: StatusAnalise = Field(
-        ...,
-        description="Indica se todas as análises foram aprovadas ou precisam de ajustes"
-    )
-    resumo_processo: dict = Field(
-        ...,
-        description="Resumo quantitativo do processo de análise"
-    )
-    detalhes_validacao: str = Field(
-        ...,
-        description="Descrição detalhada da validação realizada para cada agente"
-    )
-    problemas_identificados: List[ProblemaValidacao] = Field(
-        default_factory=list,
-        description="Lista de problemas encontrados nas análises dos agentes (se houver)"
-    )
-    conclusao: str = Field(
-        ...,
-        description="Conclusão final com recomendações e avaliação geral"
-    )
 Adm_agentes = Agent(
     model="gemini-2.5-flash",
     name="Adm_agentes",
@@ -502,7 +378,7 @@ Adm_agentes = Agent(
 
     INSTRUCTIONS:
     1. When the analysis starts, coordinate with the Contradicao agent to perform document analysis
-    2. Access the analysis results through the 'analise_contradicoes' output
+    2. Access the analysis results through the \'analise_contradicoes\' output
     3. Validate if the contradictions found are real and meaningful
     4. Check if the agent properly processed all available documents
     5. Verify that the analysis format follows the specified structure
@@ -513,7 +389,7 @@ Adm_agentes = Agent(
     📌 Additional responsibilities for orthographic and grammatical validation:
 
     9. Coordinate with the OrtografiaGramatica agent to analyze spelling and grammar
-    10. Access the analysis results through the 'analise_ortografia_gramatica' output
+    10. Access the analysis results through the \'analise_ortografia_gramatica\' output
     11. Validate whether all detected errors are accurate and justified
     12. Ensure the suggestions are correct according to formal written Portuguese (Acordo Ortográfico da Língua Portuguesa)
     13. Check if the agent followed the response format strictly
@@ -523,7 +399,7 @@ Adm_agentes = Agent(
     📌 Additional responsibilities for ambiguity detection:
 
     16. Coordinate with the Ambiguidade agent to analyze ambiguous language
-    17. Access the analysis results through the 'analise_ambiguidade' output
+    17. Access the analysis results through the \'analise_ambiguidade\' output
     18. Validate whether each ambiguity identified is truly open to multiple interpretations
     19. Check if the ambiguity type (lexical, syntactic, referential, scope) was correctly classified
     20. Verify that the rewriting suggestions resolve the ambiguity clearly
@@ -533,35 +409,34 @@ Adm_agentes = Agent(
 
     RESPONSE FORMAT (JSON):
     {
-      "status_analise": "Aprovada" | "Necessita Correção",
-      "resumo_processo": {
-        "arquivos_pdf_encontrados": 3,
-        "arquivos_processados_com_sucesso": 3,
-        "contradicoes_validadas": 2,
-        "erros_ortograficos_gramaticais_validados": 5,
-        "ambiguidades_validadas": 3
+      \"status_analise\": \"Aprovada\" | \"Necessita Correção\",
+      \"resumo_processo\": {
+        \"arquivos_pdf_encontrados\": 3,
+        \"arquivos_processados_com_sucesso\": 3,
+        \"contradicoes_validadas\": 2,
+        \"erros_ortograficos_gramaticais_validados\": 5,
+        \"ambiguidades_validadas\": 3
       },
-      "detalhes_validacao": "Todos os agentes processaram os documentos corretamente. A análise de contradições foi consistente com os trechos extraídos. Os erros gramaticais foram corretamente identificados e classificados. As ambiguidades foram bem caracterizadas, com sugestões claras de reescrita.",
-      "problemas_identificados": [
+      \"detalhes_validacao\": \"Todos os agentes processaram os documentos corretamente. A análise de contradições foi consistente com os trechos extraídos. Os erros gramaticais foram corretamente identificados e classificados. As ambiguidades foram bem caracterizadas, com sugestões claras de reescrita.\",
+      \"problemas_identificados\": [
         {
-          "agente": "OrtografiaGramatica",
-          "erro": "Sugestão incorreta para 'pára' → 'para' em contexto verbal",
-          "sugestao": "Verificar se 'pára' está no sentido de verbo 'parar', o que mantém acento"
+          \"agente\": \"OrtografiaGramatica\",
+          \"erro\": \"Sugestão incorreta para \'pára\' → \'para\' em contexto verbal\",
+          \"sugestao\": \"Verificar se \'pára\' está no sentido de verbo \'parar\', o que mantém acento\"
         }
       ],
-      "conclusao": "A análise geral foi satisfatória, com alto nível de acurácia. Um ajuste é necessário no agente de ortografia para casos de verbos acentuados. Após correção, o conjunto de documentos pode ser considerado validado."
+      \"conclusao\": \"A análise geral foi satisfatória, com alto nível de acurácia. Um ajuste é necessário no agente de ortografia para casos de verbos acentuados. Após correção, o conjunto de documentos pode ser considerado validado.\"
     }
 
     IMPORTANT:
     - Respond ONLY in valid JSON format, strictly adhering to the structure above.
     - DO NOT include any additional text, markdown, or explanations outside the JSON.
-    - If no problems were found, keep 'problemas_identificados' as an empty list [].
+    - If no problems were found, keep \'problemas_identificados\' as an empty list [].
     - Always ensure the final output is a single, valid JSON object.
     - After validation, finalize the process and confirm completion.
     """,
     sub_agents=[Contradicao, OrtografiaGramatica, Ambiguidade],
     tools=[ferramentas.list_pdfs, ferramentas.obter_dados_processados],
-    output_schema=AdmAgentesResponse,  # ← Força a saída em JSON estruturado e validado
     output_key="validacao_final"
 )
 
