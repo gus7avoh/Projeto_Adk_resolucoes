@@ -11,11 +11,10 @@ import logging
 import json
 import time # Importar para usar time.sleep
 
-import Adm_agentes.tools.ferramentas as ferramentas
+import tools.ferramentas as ferramentas
 
 load_dotenv()
 
-# Configuração dos caminhos - usando variáveis de ambiente para flexibilidade
 BASE_PATH = os.getenv("DOCUMENTS_PATH", r"D:\cod\Arsae\Adk\Projeto_Adk_resolucoes\Adm_agentes\documentos")
 # Criar diretório de logs se não existir
 Path("logs").mkdir(exist_ok=True)
@@ -71,7 +70,7 @@ def executar_analise_documentos():
 
     # Etapa 2: Processar todos os PDFs uma única vez
     try:
-        ferramentas.processar_pdf()  # Processa todos
+        ferramentas.obter_dados_processados()
         contexto.adicionar_log("Sistema", "processar_pdf", "Todos os PDFs foram processados com sucesso")
     except Exception as e:
         contexto.adicionar_log("Sistema", "erro", f"Falha ao processar PDFs: {str(e)}")
@@ -95,8 +94,8 @@ def executar_analise_documentos():
                 contexto.adicionar_log(nome, "iniciando", f"Agente ativado (Tentativa {retries + 1}/{MAX_RETRIES + 1})")
                 
                 # Executa o agente
-                resultado = agente.run()
-                
+                resultado = agente.adk_agent.run_async(contexto.documentos)
+
                 # Salva o resultado
                 contexto.salvar_resultado(nome, resultado)
                 
@@ -146,7 +145,6 @@ Contradicao = Agent(
     
     Functions available for you to use:
     - ferramentas.list_pdfs() -> list - List all available PDF files
-    - ferramentas.processar_pdf() -> dict - Process all PDF files to extract content in a dictionary format
     - ferramentas.obter_dados_processados() -> dict - Get processed data for analysis
   
     INSTRUCTIONS:
@@ -229,7 +227,6 @@ OrtografiaGramatica = Agent(
 
     Functions available for you to use:
     - ferramentas.list_pdfs() -> list - List all available PDF files
-    - ferramentas.processar_pdf() -> dict - Process all PDF files to extract content in a dictionary format
     - ferramentas.obter_dados_processados() -> dict - Get processed data for analysis
 
     INSTRUCTIONS:

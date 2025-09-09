@@ -16,7 +16,6 @@ class AgenteOrtografia(AgenteBase):
 
     Functions available for you to use:
     - ferramentas.list_pdfs() -> list - List all available PDF files
-    - ferramentas.processar_pdf() -> dict - Process all PDF files to extract content in a dictionary format
     - ferramentas.obter_dados_processados() -> dict - Get processed data for analysis
 
     INSTRUCTIONS:

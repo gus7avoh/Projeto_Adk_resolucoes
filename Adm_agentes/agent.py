@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 import logging
+import asyncio
 import json
 
 # Importa as classes dos agentes
@@ -19,7 +20,7 @@ Path("logs").mkdir(exist_ok=True)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 logger = logging.getLogger("FluxoAgentes")
 
-def executar_analise_documentos():
+async def executar_analise_documentos():
     """
     Orquestra a execução sequencial dos agentes. A lógica de processamento
     de documentos agora é delegada para a ferramenta 'obter_dados_processados'
@@ -39,7 +40,7 @@ def executar_analise_documentos():
     except Exception as e:
         contexto.adicionar_log("Sistema", "Erro Fatal na Preparação", f"Falha ao verificar documentos: {e}")
         # Salvar logs e sair se não houver documentos
-        salvar_arquivos_finais(contexto)
+        await salvar_arquivos_finais(contexto)
         return contexto
 
     # Etapa 2: Instanciar e executar agentes em sequência.
@@ -54,17 +55,17 @@ def executar_analise_documentos():
     for agente_obj in agentes_para_executar:
         try:
             # A lógica de retentativa está dentro do método executar do agente.
-            agente_obj.executar(contexto)
+            await agente_obj.executar(contexto)
         except Exception as e:
             contexto.adicionar_log(agente_obj.nome, "Erro Fatal", f"Agente falhou após todas as tentativas: {e}")
             break # Interrompe o fluxo principal
     
     # Etapa 3: Salvar logs e resultados finais.
-    salvar_arquivos_finais(contexto)
+    await salvar_arquivos_finais(contexto)
 
     return contexto
 
-def salvar_arquivos_finais(contexto: ContextoAnalise):
+async def salvar_arquivos_finais(contexto: ContextoAnalise):
     """Função auxiliar para salvar os logs e resultados."""
     try:
         with open("logs/execucao_analise.json", "w", encoding="utf-8") as f:
@@ -77,7 +78,7 @@ def salvar_arquivos_finais(contexto: ContextoAnalise):
 
 # Ponto de entrada
 if __name__ == "__main__":
-    contexto_final = executar_analise_documentos()
+    contexto_final = asyncio.run(executar_analise_documentos())
     if "Erro Fatal" in str(contexto_final.logs[-1]):
          print("\n❌ Falha na execução do fluxo de análise.")
     else:

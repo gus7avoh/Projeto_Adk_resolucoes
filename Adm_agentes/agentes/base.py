@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from google.adk.agents import Agent # ou LlmAgent, se preferir ser explícito
 import time
+import asyncio
 import logging
 from typing import List, Dict, Any
 from datetime import datetime
@@ -45,7 +46,7 @@ class AgenteBase(ABC):
             return LlmAgent(**agent_params)
 
 
-    def executar(self, contexto, max_retries=3, delay=5):
+    async def executar(self, contexto, max_retries=3, delay=5):
         """
         Executa o agente com lógica de retentativas, usando a sintaxe de chamada correta.
         """
@@ -57,11 +58,34 @@ class AgenteBase(ABC):
                 # ===============================================================
                 # AQUI ESTÁ A CORREÇÃO CRUCIAL
                 # Trocamos .run() por () para invocar o agente
-                resultado = self.adk_agent()
+                resultado_generator = self.adk_agent.run_async(contexto.documentos)
+                resultado = []
+                async for event in resultado_generator:
+                    resultado.append(event)
+                # O resultado final pode ser o último evento ou uma agregação de todos os eventos, dependendo da necessidade.
+                # Por enquanto, vamos salvar a lista de todos os eventos.
+                # Se você precisar de um resultado específico, como o texto final, precisará extraí-lo aqui.
+                # Exemplo: resultado_final = resultado[-1].content.parts[0].text if resultado and resultado[-1].content.parts else None
                 # ===============================================================
                 
-                contexto.salvar_resultado(self.nome, resultado)
-                return resultado # Sucesso, retorna o resultado
+                # Extrair o resultado final do último evento ou de uma agregação
+                final_result = None
+                if resultado:
+                    # Supondo que o resultado relevante esteja no último evento e seja um Content com texto
+                    # Adapte esta lógica conforme a estrutura real dos seus eventos
+                    last_event = resultado[-1]
+                    if hasattr(last_event, 'content') and hasattr(last_event.content, 'parts') and last_event.content.parts:
+                        for part in last_event.content.parts:
+                            if hasattr(part, 'text') and part.text:
+                                final_result = part.text
+                                break
+                            elif hasattr(part, 'function_response') and part.function_response:
+                                final_result = part.function_response
+                                break
+                            # Adicione outras condições para extrair o resultado conforme necessário
+
+                contexto.salvar_resultado(self.nome, final_result)
+                return final_result # Sucesso, retorna o resultado
 
             except Exception as e:
                 error_message = str(e)
