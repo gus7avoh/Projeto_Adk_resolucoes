@@ -1,26 +1,62 @@
 [
   {
-    "timestamp": "2025-09-09T13:45:34.485344",
+    "timestamp": "2025-09-09T13:11:01.035209",
     "agente": "Sistema",
-    "acao": "Verificação Inicial",
+    "acao": "list_pdfs",
     "detalhes": "1 documentos encontrados: ['4-Minuta-solucoes-alternativas-2025-06-02.pdf']"
   },
   {
-    "timestamp": "2025-09-09T13:45:34.485986",
+    "timestamp": "2025-09-09T13:11:11.380887",
+    "agente": "Sistema",
+    "acao": "processar_pdf",
+    "detalhes": "Todos os PDFs foram processados com sucesso"
+  },
+  {
+    "timestamp": "2025-09-09T13:11:11.381049",
     "agente": "Contradicao",
     "acao": "iniciando",
-    "detalhes": "Tentativa 1/3"
+    "detalhes": "Agente ativado (Tentativa 1/4)"
   },
   {
-    "timestamp": "2025-09-09T13:45:34.486224",
+    "timestamp": "2025-09-09T13:11:11.381254",
     "agente": "Contradicao",
     "acao": "erro",
-    "detalhes": "Falha na execução: 'list' object has no attribute 'model_copy'"
+    "detalhes": "Falha na execução: 'LlmAgent' object has no attribute 'adk_agent'"
   },
   {
-    "timestamp": "2025-09-09T13:45:34.486387",
-    "agente": "Contradicao",
-    "acao": "Erro Fatal",
-    "detalhes": "Agente falhou após todas as tentativas: 'list' object has no attribute 'model_copy'"
+    "timestamp": "2025-09-09T13:11:11.381384",
+    "agente": "OrtografiaGramatica",
+    "acao": "iniciando",
+    "detalhes": "Agente ativado (Tentativa 1/4)"
+  },
+  {
+    "timestamp": "2025-09-09T13:11:11.381519",
+    "agente": "OrtografiaGramatica",
+    "acao": "erro",
+    "detalhes": "Falha na execução: 'LlmAgent' object has no attribute 'adk_agent'"
+  },
+  {
+    "timestamp": "2025-09-09T13:11:11.381711",
+    "agente": "Ambiguidade",
+    "acao": "iniciando",
+    "detalhes": "Agente ativado (Tentativa 1/4)"
+  },
+  {
+    "timestamp": "2025-09-09T13:11:11.381830",
+    "agente": "Ambiguidade",
+    "acao": "erro",
+    "detalhes": "Falha na execução: 'LlmAgent' object has no attribute 'adk_agent'"
+  },
+  {
+    "timestamp": "2025-09-09T13:11:11.381926",
+    "agente": "Adm_agentes",
+    "acao": "iniciando",
+    "detalhes": "Agente ativado (Tentativa 1/4)"
+  },
+  {
+    "timestamp": "2025-09-09T13:11:11.382043",
+    "agente": "Adm_agentes",
+    "acao": "erro",
+    "detalhes": "Falha na execução: 'LlmAgent' object has no attribute 'adk_agent'"
   }
 ]

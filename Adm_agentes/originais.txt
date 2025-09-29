@@ -11,7 +11,7 @@ import logging
 import json
 import time # Importar para usar time.sleep
 
-import tools.ferramentas as ferramentas
+from . import ferramentas
 
 load_dotenv()
 
