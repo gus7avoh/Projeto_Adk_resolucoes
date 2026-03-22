@@ -47,6 +47,6 @@ Apesar do sucesso inicial e do feedback positivo dos superiores, a escala do pro
 
 ## Conclusão e Futuro
 Após cerca de 3 meses desenvolvendo esse projeto e alguns outros em paralelo, cheguei à conclusão de que seria melhor tentar outra abordagem e decidi migrar para o n8n, que era outra ferramenta que estava muito bem no mercado.
-Essa experiência em meados de junho de 2025 foi o meu primeiro projeto com inteligência artificial. Infelizmente não consegui finalizar a entrega da melhor forma, muito pela falta de uma ferramenta adequada para o que eu precisava fazer, porém consegui aprender muito sobre o desenvolvimento de sistemas como esse. Hoje, com ferramentas mais adequadas como o LangGraph, tenho certeza que conseguiria desenvolver o sistema de uma forma muito mais eficiente.
+Essa experiência em meados de junho de 2025 foi o meu primeiro projeto com inteligência artificial. Infelizmente não consegui finalizar a entrega da melhor forma, muito pela falta de uma ferramenta adequada para o que eu precisava fazer, porém consegui aprender muito sobre o desenvolvimento de sistemas como esse. Hoje, com ferramentas mais adequadas como o LangGraph, tenho certeza que conseguiria desenvolver o sistema de uma forma muito mais eficiente. 
 
 ---
