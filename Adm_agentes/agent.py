@@ -362,7 +362,6 @@ Adm_agentes = Agent(
 # Variável que o ADK procura para o agente raiz
 root_agent = Adm_agentes
 
-
 if __name__ == "__main__":
     contexto_final = executar_analise_documentos()
     if contexto_final:
@@ -370,3 +369,5 @@ if __name__ == "__main__":
          print(json.dumps(contexto_final.resultados.get("Adm_agentes", {}), ensure_ascii=False, indent=2))
     else:
          print("\n❌ Falha na execução do fluxo de análise.")
+
+
